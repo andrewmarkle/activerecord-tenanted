@@ -34,7 +34,7 @@ module ActiveRecord
               yield
             end
           else
-            identifier = config_or_identifier
+            identifier = db_config_or_identifier
             ActiveRecord::Tenanted::DatabaseAdapters::SQLite.acquire_lock(identifier, &block)
           end
         end
