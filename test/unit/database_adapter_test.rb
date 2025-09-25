@@ -3,16 +3,14 @@
 require "test_helper"
 
 describe ActiveRecord::Tenanted::DatabaseAdapter do
-  let(:sqlite_config) { create_config("sqlite3", "test.sqlite3") }
-
   describe ".adapter_for" do
     test "selects correct adapter for sqlite3" do
-      adapter = ActiveRecord::Tenanted::DatabaseAdapter.adapter_for(sqlite_config)
+      adapter = ActiveRecord::Tenanted::DatabaseAdapter.adapter_for(create_config("sqlite3"))
       assert_instance_of ActiveRecord::Tenanted::DatabaseAdapters::SQLite, adapter
     end
 
     test "raises error for unsupported adapter" do
-      unsupported_config = create_config("mongodb", "test_db")
+      unsupported_config = create_config("mongodb")
 
       error = assert_raises ActiveRecord::Tenanted::Error do
         ActiveRecord::Tenanted::DatabaseAdapter.adapter_for(unsupported_config)
@@ -23,114 +21,113 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
   end
 
   describe "delegation" do
-    test ".create_database calls SQLite#create_database" do
-      sqlite_mock = Minitest::Mock.new
-      sqlite_mock.expect(:create_database, nil)
+    ActiveRecord::Tenanted::DatabaseAdapter::ADAPTERS.each do |adapter, adapter_class_name|
+      test ".create_database calls adapter's #create_database" do
+        adapter_mock = Minitest::Mock.new
+        adapter_mock.expect(:create_database, nil)
 
-      ActiveRecord::Tenanted::DatabaseAdapters::SQLite.stub(:new, sqlite_mock) do
-        ActiveRecord::Tenanted::DatabaseAdapter.create_database(sqlite_config)
+        "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
+          ActiveRecord::Tenanted::DatabaseAdapter.create_database(create_config(adapter))
+        end
+
+        assert_mock adapter_mock
       end
 
-      assert_mock sqlite_mock
-    end
+      test ".drop_database calls adapter's #drop_database" do
+        adapter_mock = Minitest::Mock.new
+        adapter_mock.expect(:drop_database, nil)
 
-    test ".drop_database calls SQLite#drop_database" do
-      sqlite_mock = Minitest::Mock.new
-      sqlite_mock.expect(:drop_database, nil)
+        "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
+          ActiveRecord::Tenanted::DatabaseAdapter.drop_database(create_config(adapter))
+        end
 
-      ActiveRecord::Tenanted::DatabaseAdapters::SQLite.stub(:new, sqlite_mock) do
-        ActiveRecord::Tenanted::DatabaseAdapter.drop_database(sqlite_config)
+        assert_mock adapter_mock
       end
 
-      assert_mock sqlite_mock
-    end
+      test ".database_exists? calls adapter's #database_exists?" do
+        adapter_mock = Minitest::Mock.new
+        adapter_mock.expect(:database_exists?, true)
 
-    test ".database_exists? calls SQLite#database_exists?" do
-      sqlite_mock = Minitest::Mock.new
-      sqlite_mock.expect(:database_exists?, true)
+        result = "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
+          ActiveRecord::Tenanted::DatabaseAdapter.database_exists?(create_config(adapter))
+        end
 
-      result = ActiveRecord::Tenanted::DatabaseAdapters::SQLite.stub(:new, sqlite_mock) do
-        ActiveRecord::Tenanted::DatabaseAdapter.database_exists?(sqlite_config)
+        assert_equal true, result
+        assert_mock adapter_mock
       end
 
-      assert_equal true, result
-      assert_mock sqlite_mock
-    end
+      test ".list_tenant_databases calls adapter's #list_tenant_databases" do
+        adapter_mock = Minitest::Mock.new
+        adapter_mock.expect(:list_tenant_databases, [ "foo", "bar" ])
 
-    test ".list_tenant_databases calls SQLite#list_tenant_databases" do
-      sqlite_mock = Minitest::Mock.new
-      sqlite_mock.expect(:list_tenant_databases, [ "a", "b" ])
+        result = "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
+          ActiveRecord::Tenanted::DatabaseAdapter.list_tenant_databases(create_config(adapter))
+        end
 
-      result = ActiveRecord::Tenanted::DatabaseAdapters::SQLite.stub(:new, sqlite_mock) do
-        ActiveRecord::Tenanted::DatabaseAdapter.list_tenant_databases(sqlite_config)
+        assert_equal [ "foo", "bar" ], result
+        assert_mock adapter_mock
       end
 
-      assert_equal [ "a", "b" ], result
-      assert_mock sqlite_mock
-    end
+      test ".validate_tenant_name calls adapter's #validate_tenant_name" do
+        adapter_mock = Minitest::Mock.new
+        adapter_mock.expect(:validate_tenant_name, nil, [ "tenant1" ])
 
-    test ".validate_tenant_name calls SQLite#validate_tenant_name" do
-      sqlite_mock = Minitest::Mock.new
-      sqlite_mock.expect(:validate_tenant_name, nil, [ "tenant1" ])
+        "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
+          ActiveRecord::Tenanted::DatabaseAdapter.validate_tenant_name(create_config(adapter), "tenant1")
+        end
 
-      ActiveRecord::Tenanted::DatabaseAdapters::SQLite.stub(:new, sqlite_mock) do
-        ActiveRecord::Tenanted::DatabaseAdapter.validate_tenant_name(sqlite_config, "tenant1")
+        assert_mock adapter_mock
       end
 
-      assert_mock sqlite_mock
-    end
+      test ".acquire_lock (new signature) calls adapter's #acquire_lock" do
+        lock_name = "tenant_creation_test.sqlite3"
+        adapter_mock = Minitest::Mock.new
+        adapter_mock.expect(:acquire_lock, nil, [ lock_name ])
 
-    test ".acquire_lock (new signature) calls SQLite#acquire_lock" do
-      lock_name = "tenant_creation_test.sqlite3"
-      sqlite_mock = Minitest::Mock.new
-      sqlite_mock.expect(:acquire_lock, nil, [ lock_name ])
+        "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
+          ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(create_config(adapter), lock_name) { }
+        end
 
-      ActiveRecord::Tenanted::DatabaseAdapters::SQLite.stub(:new, sqlite_mock) do
-        ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(sqlite_config, lock_name) { }
+        assert_mock adapter_mock
       end
 
-      assert_mock sqlite_mock
-    end
+      test ".acquire_lock (legacy signature) calls adapter's #acquire_lock (class)" do
+        identifier = "legacy_lock_id"
 
-    test ".acquire_lock (legacy signature) calls SQLite.acquire_lock (class)" do
-      identifier = "legacy_lock_id"
+        called = nil
+        klass = "#{adapter_class_name}".constantize
+        existed = klass.respond_to?(:acquire_lock)
+        klass.singleton_class.class_eval { define_method(:acquire_lock) { |*args, **kwargs| } } unless existed
 
-      called = nil
-      klass = ActiveRecord::Tenanted::DatabaseAdapters::SQLite
-      existed = klass.respond_to?(:acquire_lock)
-      klass.singleton_class.class_eval { define_method(:acquire_lock) { |*args, **kwargs| } } unless existed
+        klass.stub(:acquire_lock, ->(id, &blk) { called = id; blk&.call }) do
+          ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(identifier) { :ok }
+        end
 
-      klass.stub(:acquire_lock, ->(id, &blk) { called = id; blk&.call }) do
-        ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(identifier) { :ok }
+        assert_equal identifier, called
+      ensure
+        klass.singleton_class.send(:remove_method, :acquire_lock) unless existed
       end
 
-      assert_equal identifier, called
-    ensure
-      klass.singleton_class.send(:remove_method, :acquire_lock) unless existed
-    end
+      test ".acquire_lock (new signature, non-sqlite) yields without calling adapter" do
+        non_sqlite_config = create_config("mysql")
 
-    test ".acquire_lock (new signature, non-sqlite) yields without calling adapter" do
-      non_sqlite_config = create_config("postgresql", "db_name")
+        yielded = false
+        ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(non_sqlite_config, "ignored") { yielded = true }
 
-      yielded = false
-      ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(non_sqlite_config, "ignored") { yielded = true }
-
-      assert_equal true, yielded
+        assert_equal true, yielded
+      end
     end
   end
 
-
   private
-    def create_config(adapter, database)
-      config_hash = {
-        adapter: adapter,
-        database: database,
-      }
-
+    def create_config(adapter)
       ActiveRecord::DatabaseConfigurations::HashConfig.new(
         "test",
         "test_config",
-        config_hash
+        {
+          adapter: adapter,
+          database: "db_name",
+        }
       )
     end
 end
