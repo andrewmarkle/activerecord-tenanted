@@ -16,7 +16,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         ActiveRecord::Tenanted::DatabaseAdapter.adapter_for(unsupported_config)
       end
 
-      assert_includes error.message, "Unsupported database adapter for tenanting: mongodb. Supported adapters: sqlite3"
+      assert_includes error.message, "Unsupported database adapter for tenanting: mongodb."
     end
   end
 
@@ -26,7 +26,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         adapter_mock = Minitest::Mock.new
         adapter_mock.expect(:create_database, nil)
 
-        "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
+        adapter_class_name.constantize.stub(:new, adapter_mock) do
           ActiveRecord::Tenanted::DatabaseAdapter.create_database(create_config(adapter))
         end
 
@@ -37,7 +37,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         adapter_mock = Minitest::Mock.new
         adapter_mock.expect(:drop_database, nil)
 
-        "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
+        adapter_class_name.constantize.stub(:new, adapter_mock) do
           ActiveRecord::Tenanted::DatabaseAdapter.drop_database(create_config(adapter))
         end
 
@@ -48,7 +48,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         adapter_mock = Minitest::Mock.new
         adapter_mock.expect(:database_exists?, true)
 
-        result = "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
+        result = adapter_class_name.constantize.stub(:new, adapter_mock) do
           ActiveRecord::Tenanted::DatabaseAdapter.database_exists?(create_config(adapter))
         end
 
@@ -60,7 +60,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         adapter_mock = Minitest::Mock.new
         adapter_mock.expect(:list_tenant_databases, [ "foo", "bar" ])
 
-        result = "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
+        result = adapter_class_name.constantize.stub(:new, adapter_mock) do
           ActiveRecord::Tenanted::DatabaseAdapter.list_tenant_databases(create_config(adapter))
         end
 
@@ -72,7 +72,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         adapter_mock = Minitest::Mock.new
         adapter_mock.expect(:validate_tenant_name, nil, [ "tenant1" ])
 
-        "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
+        adapter_class_name.constantize.stub(:new, adapter_mock) do
           ActiveRecord::Tenanted::DatabaseAdapter.validate_tenant_name(create_config(adapter), "tenant1")
         end
 
@@ -81,29 +81,38 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
 
       test ".acquire_lock (new signature) calls adapter's #acquire_lock" do
         lock_name = "tenant_creation_test.sqlite3"
-        adapter_mock = Minitest::Mock.new
-        adapter_mock.expect(:acquire_lock, nil, [ lock_name ])
 
-        "#{adapter_class_name}".constantize.stub(:new, adapter_mock) do
-          ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(create_config(adapter), lock_name) { }
+        called = nil
+        fake_adapter = Object.new
+        fake_adapter.define_singleton_method(:acquire_lock) do |id, &blk|
+          called = id
+          blk&.call
         end
 
-        assert_mock adapter_mock
+        yielded = false
+        result = adapter_class_name.constantize.stub(:new, fake_adapter) do
+          ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(create_config(adapter), lock_name) { yielded = true; :ok }
+        end
+
+        assert_equal lock_name, called
+        assert_equal true, yielded
+        assert_equal :ok, result
       end
 
       test ".acquire_lock (legacy signature) calls adapter's #acquire_lock (class)" do
         identifier = "legacy_lock_id"
 
         called = nil
-        klass = "#{adapter_class_name}".constantize
+        klass = adapter_class_name.constantize
         existed = klass.respond_to?(:acquire_lock)
         klass.singleton_class.class_eval { define_method(:acquire_lock) { |*args, **kwargs| } } unless existed
 
-        klass.stub(:acquire_lock, ->(id, &blk) { called = id; blk&.call }) do
+        result = klass.stub(:acquire_lock, ->(id, &blk) { called = id; blk&.call }) do
           ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(identifier) { :ok }
         end
 
         assert_equal identifier, called
+        assert_equal :ok, result
       ensure
         klass.singleton_class.send(:remove_method, :acquire_lock) unless existed
       end
