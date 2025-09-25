@@ -5,6 +5,8 @@ module ActiveRecord
     class DatabaseAdapter
       ADAPTERS = {
         "sqlite3" => "ActiveRecord::Tenanted::DatabaseAdapters::SQLite",
+        "trilogy" => "ActiveRecord::Tenanted::DatabaseAdapters::MySQL",
+        "mysql" => "ActiveRecord::Tenanted::DatabaseAdapters::MySQL",
       }.freeze
 
       class << self

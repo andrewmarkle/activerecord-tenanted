@@ -58,17 +58,6 @@ module ActiveRecord
           end
         end
 
-        def coerce_database_path(database_string)
-          # Handle SQLite URI formats
-          # See https://sqlite.org/uri.html
-          if database_string.start_with?("file:/")
-            URI.parse(database_string).path
-          elsif database_string.start_with?("file:")
-            URI.parse(database_string.sub(/\?.*$/, "")).opaque
-          else
-            database_string
-          end
-        end
 
         private
           attr_reader :db_config, :db_configuration_hash
