@@ -57,7 +57,7 @@ module ActiveRecord
           end
         end
 
-        def database_exists?
+        def database_exists?(arguments = {})
           database_name = db_config.database
 
           # Create a temporary config without the specific database to connect to MySQL server
@@ -113,7 +113,7 @@ module ActiveRecord
           []
         end
 
-        def acquire_lock(lock_identifier, timeout: 10, &block)
+        def acquire_lock(db_config, &block)
           yield
         end
 
