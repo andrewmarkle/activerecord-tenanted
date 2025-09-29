@@ -22,7 +22,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
 
   describe "delegation" do
     ActiveRecord::Tenanted::DatabaseAdapter::ADAPTERS.each do |adapter, adapter_class_name|
-      test ".create_database calls adapter's #create_database" do
+      test "#{adapter} .create_database calls adapter's #create_database" do
         adapter_mock = Minitest::Mock.new
         adapter_mock.expect(:create_database, nil)
 
@@ -33,7 +33,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         assert_mock adapter_mock
       end
 
-      test ".drop_database calls adapter's #drop_database" do
+      test "#{adapter} .drop_database calls adapter's #drop_database" do
         adapter_mock = Minitest::Mock.new
         adapter_mock.expect(:drop_database, nil)
 
@@ -44,7 +44,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         assert_mock adapter_mock
       end
 
-      test ".database_exists? calls adapter's #database_exists?" do
+      test "#{adapter} .database_exists? calls adapter's #database_exists?" do
         adapter_mock = Minitest::Mock.new
         adapter_mock.expect(:database_exists?, true, [ {} ])
 
@@ -56,7 +56,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         assert_mock adapter_mock
       end
 
-      test ".list_tenant_databases calls adapter's #list_tenant_databases" do
+      test "#{adapter} .list_tenant_databases calls adapter's #list_tenant_databases" do
         adapter_mock = Minitest::Mock.new
         adapter_mock.expect(:list_tenant_databases, [ "foo", "bar" ])
 
@@ -68,7 +68,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         assert_mock adapter_mock
       end
 
-      test ".validate_tenant_name calls adapter's #validate_tenant_name" do
+      test "#{adapter} .validate_tenant_name calls adapter's #validate_tenant_name" do
         adapter_mock = Minitest::Mock.new
         adapter_mock.expect(:validate_tenant_name, nil, [ "tenant1" ])
 
@@ -79,7 +79,7 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         assert_mock adapter_mock
       end
 
-      test ".acquire_lock calls adapter's #acquire_lock" do
+      test "#{adapter} .acquire_lock calls adapter's #acquire_lock" do
         fake_adapter = Object.new
         fake_adapter.define_singleton_method(:acquire_lock) do |id, &blk|
           blk&.call
