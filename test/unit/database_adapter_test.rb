@@ -46,10 +46,10 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
 
       test ".database_exists? calls adapter's #database_exists?" do
         adapter_mock = Minitest::Mock.new
-        adapter_mock.expect(:database_exists?, true)
+        adapter_mock.expect(:database_exists?, true, [ {} ])
 
         result = adapter_class_name.constantize.stub(:new, adapter_mock) do
-          ActiveRecord::Tenanted::DatabaseAdapter.database_exists?(create_config(adapter))
+          ActiveRecord::Tenanted::DatabaseAdapter.database_exists?(create_config(adapter), {})
         end
 
         assert_equal true, result
@@ -79,51 +79,19 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         assert_mock adapter_mock
       end
 
-      test ".acquire_lock (new signature) calls adapter's #acquire_lock" do
-        lock_name = "tenant_creation_test.sqlite3"
-
-        called = nil
+      test ".acquire_lock calls adapter's #acquire_lock" do
         fake_adapter = Object.new
         fake_adapter.define_singleton_method(:acquire_lock) do |id, &blk|
-          called = id
           blk&.call
         end
 
         yielded = false
         result = adapter_class_name.constantize.stub(:new, fake_adapter) do
-          ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(create_config(adapter), lock_name) { yielded = true; :ok }
+          ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(create_config(adapter)) { yielded = true; :ok }
         end
 
-        assert_equal lock_name, called
         assert_equal true, yielded
         assert_equal :ok, result
-      end
-
-      test ".acquire_lock (legacy signature) calls adapter's #acquire_lock (class)" do
-        identifier = "legacy_lock_id"
-
-        called = nil
-        klass = adapter_class_name.constantize
-        existed = klass.respond_to?(:acquire_lock)
-        klass.singleton_class.class_eval { define_method(:acquire_lock) { |*args, **kwargs| } } unless existed
-
-        result = klass.stub(:acquire_lock, ->(id, &blk) { called = id; blk&.call }) do
-          ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(identifier) { :ok }
-        end
-
-        assert_equal identifier, called
-        assert_equal :ok, result
-      ensure
-        klass.singleton_class.send(:remove_method, :acquire_lock) unless existed
-      end
-
-      test ".acquire_lock (new signature, non-sqlite) yields without calling adapter" do
-        non_sqlite_config = create_config("mysql")
-
-        yielded = false
-        ActiveRecord::Tenanted::DatabaseAdapter.acquire_lock(non_sqlite_config, "ignored") { yielded = true }
-
-        assert_equal true, yielded
       end
     end
   end

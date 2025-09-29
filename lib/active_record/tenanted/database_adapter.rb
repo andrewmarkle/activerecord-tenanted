@@ -18,27 +18,12 @@ module ActiveRecord
           adapter_for(db_config).drop_database
         end
 
-        def database_exists?(db_config)
-          adapter_for(db_config).database_exists?
+        def database_exists?(db_config, arguments = {})
+          adapter_for(db_config).database_exists?(arguments)
         end
 
-        def acquire_lock(db_config_or_identifier, lock_name = nil, &block)
-          # Handle both new signature (config, lock_name) and legacy (identifier)
-          if db_config_or_identifier.respond_to?(:adapter)
-            config = db_config_or_identifier
-            adapter_name = config.adapter || config.configuration_hash[:adapter]
-
-            if adapter_name == "sqlite3"
-              identifier = lock_name || "tenant_creation_#{config.database}"
-              adapter_for(config).acquire_lock(identifier, &block)
-            else
-              # MySQL and other databases don't need locking - just execute the block
-              yield
-            end
-          else
-            identifier = db_config_or_identifier
-            ActiveRecord::Tenanted::DatabaseAdapters::SQLite.acquire_lock(identifier, &block)
-          end
+        def acquire_lock(db_config, &block)
+          adapter_for(db_config).acquire_lock(db_config, &block)
         end
 
         def list_tenant_databases(db_config)
