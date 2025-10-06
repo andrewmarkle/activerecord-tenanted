@@ -9,7 +9,6 @@ module ActiveRecord
         end
 
         def new_connection
-          ensure_database_directory_exists # adapter doesn't handle this if the database is a URI
           super.tap { |conn| conn.tenant = tenant }
         end
 
@@ -40,16 +39,6 @@ module ActiveRecord
         def database_path
           @database_path ||= Tenanted::DatabaseAdapter.adapter_for(self).database_path
         end
-
-        private
-          def ensure_database_directory_exists
-            return unless database_path
-
-            database_dir = File.dirname(database_path)
-            unless File.directory?(database_dir)
-              FileUtils.mkdir_p(database_dir)
-            end
-          end
       end
     end
   end
