@@ -38,7 +38,7 @@ module ActiveRecord
         end
 
         def database_path
-          configuration_hash[:database_path]
+          @database_path ||= Tenanted::DatabaseAdapter.adapter_for(self).database_path
         end
 
         private

@@ -413,7 +413,6 @@ TODO:
   - [x] create the specialized BaseConfig for `tenanted: true` databases
   - [x] BaseConfig disables database tasks initially
   - [x] BaseConfig raises if a connection is attempted
-  - [x] `#database_path_for(tenant_name)`
   - [x] `#tenants` returns all the tenants on disk (for iteration)
   - [x] raise an exception if tenant name contains a path separator
   - [ ] bucketed database paths

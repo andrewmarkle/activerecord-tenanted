@@ -6,6 +6,9 @@ module ActiveRecord
       class SQLite # :nodoc:
         def initialize(db_config)
           @db_config = db_config
+          @database_path = if db_config.is_a?(Tenanted::DatabaseConfigurations::TenantConfig)
+            coerce_path(db_config.database)
+          end
         end
 
         def create_database
@@ -33,8 +36,11 @@ module ActiveRecord
         end
 
         def tenant_databases
-          glob = db_config.database_path_for("*")
-          scanner = Regexp.new(db_config.database_path_for("(.+)"))
+          glob_database = db_config.database_for("*")
+          glob = coerce_path(glob_database)
+
+          scanner_database = db_config.database_for("(.+)")
+          scanner = Regexp.new(coerce_path(scanner_database))
 
           Dir.glob(glob).filter_map do |path|
             result = path.scan(scanner).flatten.first
@@ -55,11 +61,19 @@ module ActiveRecord
           end
         end
 
+        attr_reader :database_path
+
         private
           attr_reader :db_config
 
-          def database_path
-            db_config.database_path
+          def coerce_path(path)
+            if path.start_with?("file:/")
+              URI.parse(path).path
+            elsif path.start_with?("file:")
+              URI.parse(path.sub(/\?.*$/, "")).opaque
+            else
+              path
+            end
           end
       end
     end

@@ -552,13 +552,14 @@ describe ActiveRecord::Tenanted::Tenant do
       end
 
       test "it returns false if the tenant database is in the process of being migrated" do
-        db_path = TenantedApplicationRecord.tenanted_root_config.database_path_for("foo")
+        tenant_config = TenantedApplicationRecord.tenanted_root_config.new_tenant_config("foo")
+        db_path = tenant_config.database_path
 
         assert_not(TenantedApplicationRecord.tenant_exist?("foo"))
 
         ActiveRecord::Tenanted::Mutex::Ready.lock(db_path) do
           assert_not(TenantedApplicationRecord.tenant_exist?("foo"))
-          FileUtils.touch(db_path) # pretend the database was created and migrated
+          FileUtils.touch(db_path)
         end
 
         assert(TenantedApplicationRecord.tenant_exist?("foo"))
@@ -839,13 +840,14 @@ describe ActiveRecord::Tenanted::Tenant do
       end
 
       test "it does not return tenants that are not ready" do
-        foo_db_path = TenantedApplicationRecord.tenanted_root_config.database_path_for("foo")
+        foo_tenant_config = TenantedApplicationRecord.tenanted_root_config.new_tenant_config("foo")
+        foo_db_path = foo_tenant_config.database_path
         TenantedApplicationRecord.create_tenant("bar")
 
         ActiveRecord::Tenanted::Mutex::Ready.lock(foo_db_path) do
           assert_equal([ "bar" ], TenantedApplicationRecord.tenants)
 
-          FileUtils.touch(foo_db_path) # pretend the database was created
+          FileUtils.touch(foo_db_path)
 
           assert_equal([ "bar" ], TenantedApplicationRecord.tenants)
         end

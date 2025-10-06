@@ -32,6 +32,10 @@ module ActiveRecord
           adapter_for(db_config).tenant_databases
         end
 
+        def database_path(db_config)
+          adapter_for(db_config).database_path
+        end
+
         def validate_tenant_name(db_config, tenant_name)
           adapter_for(db_config).validate_tenant_name(tenant_name)
         end

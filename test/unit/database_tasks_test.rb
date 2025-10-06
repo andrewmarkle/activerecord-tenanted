@@ -18,7 +18,8 @@ describe ActiveRecord::Tenanted::DatabaseTasks do
       end
 
       test "database should be created" do
-        db_path = tenanted_config.database_path_for("foo")
+        tenant_config = tenanted_config.new_tenant_config("foo")
+        db_path = tenant_config.database_path
 
         ActiveRecord::Tenanted::DatabaseTasks.migrate_tenant("foo")
 

@@ -31,10 +31,6 @@ module ActiveRecord
           end
         end
 
-        def database_path_for(tenant_name)
-          coerce_path(database_for(tenant_name))
-        end
-
         def tenants
           ActiveRecord::Tenanted::DatabaseAdapter.tenant_databases(self)
         end
@@ -44,7 +40,6 @@ module ActiveRecord
           config_hash = configuration_hash.dup.tap do |hash|
             hash[:tenant] = tenant_name
             hash[:database] = database_for(tenant_name)
-            hash[:database_path] = database_path_for(tenant_name)
             hash[:tenanted_config_name] = name
           end
           Tenanted::DatabaseConfigurations::TenantConfig.new(env_name, config_name, config_hash)
@@ -62,18 +57,6 @@ module ActiveRecord
         end
 
         private
-          # A sqlite database path can be a file path or a URI (either relative or absolute).
-          # We can't parse it as a standard URI in all circumstances, though, see https://sqlite.org/uri.html
-          def coerce_path(path)
-            if path.start_with?("file:/")
-              URI.parse(path).path
-            elsif path.start_with?("file:")
-              URI.parse(path.sub(/\?.*$/, "")).opaque
-            else
-              path
-            end
-          end
-
           def validate_tenant_name(tenant_name)
             ActiveRecord::Tenanted::DatabaseAdapter.validate_tenant_name(self, tenant_name)
           end

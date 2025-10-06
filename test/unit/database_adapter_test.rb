@@ -91,6 +91,18 @@ describe ActiveRecord::Tenanted::DatabaseAdapter do
         assert_mock adapter_mock
       end
 
+      test "#{adapter} .database_path calls adapter's #database_path" do
+        adapter_mock = Minitest::Mock.new
+        adapter_mock.expect(:database_path, "database_path")
+
+        result = adapter_class_name.constantize.stub(:new, adapter_mock) do
+          ActiveRecord::Tenanted::DatabaseAdapter.database_path(create_config(adapter))
+        end
+
+        assert_equal "database_path", result
+        assert_mock adapter_mock
+      end
+
       test "#{adapter} .acquire_ready_lock calls adapter's #acquire_ready_lock" do
         fake_adapter = Object.new
         fake_adapter.define_singleton_method(:acquire_ready_lock) do |id, &blk|
