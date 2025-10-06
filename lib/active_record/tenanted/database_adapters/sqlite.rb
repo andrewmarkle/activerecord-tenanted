@@ -6,7 +6,6 @@ module ActiveRecord
       class SQLite # :nodoc:
         def initialize(db_config)
           @db_config = db_config
-          @database_path = coerce_path(db_config.database)
         end
 
         def create_database
@@ -27,6 +26,10 @@ module ActiveRecord
 
         def database_exist?
           File.exist?(database_path)
+        end
+
+        def database_path
+          coerce_path(db_config.database)
         end
 
         def database_ready?
@@ -59,14 +62,12 @@ module ActiveRecord
           end
         end
 
-        attr_reader :database_path
-
         private
           attr_reader :db_config
 
           def coerce_path(path)
             return path unless path.start_with?("file:")
-            # Paths with %{tenant} are not valid URI paths and we don't need to coerce them.
+            # Paths with %{tenant} are not valid URIs that can be parsed.
             return path if path.include?("%{")
 
             if path.start_with?("file:/")
