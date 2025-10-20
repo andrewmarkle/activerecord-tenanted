@@ -61,7 +61,9 @@ module ActiveRecord
           s.each do |db_scenario, model_scenarios|
             with_db_scenario(db_scenario) do
               model_scenarios.each do |model_scenario|
+                scenario_name = db_scenario.to_s.split("/").last
                 next if except[db_scenario.to_sym]&.include?(model_scenario.to_sym)
+                next if except[scenario_name.to_sym]&.include?(model_scenario.to_sym)
                 with_model_scenario(model_scenario, &block)
               end
             end
@@ -69,27 +71,39 @@ module ActiveRecord
         end
 
         def all_scenarios
-          Dir.glob(File.join(__dir__, "scenarios", "*", "database.yml"))
+          Dir.glob(File.join(__dir__, "scenarios", "*", "*", "database.yml"))
             .each_with_object({}) do |db_config_path, scenarios|
             db_config_dir = File.dirname(db_config_path)
+            db_adapter = File.basename(File.dirname(db_config_dir))
             db_scenario = File.basename(db_config_dir)
             model_files = Dir.glob(File.join(db_config_dir, "*.rb"))
 
-            scenarios[db_scenario] = model_files.map { File.basename(_1, ".*") }
+            scenarios["#{db_adapter}/#{db_scenario}"] = model_files.map { File.basename(_1, ".*") }
           end
         end
 
         def with_db_scenario(db_scenario, &block)
-          db_config_path = File.join(__dir__, "scenarios", db_scenario.to_s, "database.yml")
+          db_adapter, db_name = db_scenario.to_s.split("/", 2)
+
+          if db_name.nil?
+            db_name = db_adapter
+            matching_scenarios = all_scenarios.keys.select { |key| key.to_s.end_with?("/#{db_name}") }
+            raise "Could not find scenario: #{db_name}" if matching_scenarios.empty?
+            raise "Multiple adapters found for scenario #{db_name}: #{matching_scenarios.join(', ')}" if matching_scenarios.size > 1
+            db_adapter, db_name = matching_scenarios.first.to_s.split("/", 2)
+          end
+
+          db_config_path = File.join(__dir__, "scenarios", db_adapter, db_name, "database.yml")
           raise "Could not find scenario db config: #{db_config_path}" unless File.exist?(db_config_path)
 
-          describe "scenario::#{db_scenario}" do
+          describe "scenario::#{db_adapter}/#{db_name}" do
             @db_config_dir = db_config_dir = File.dirname(db_config_path)
 
             let(:ephemeral_path) { Dir.mktmpdir("test-activerecord-tenanted-") }
             let(:storage_path) { File.join(ephemeral_path, "storage") }
             let(:db_path) { File.join(ephemeral_path, "db") }
-            let(:db_scenario) { db_scenario.to_sym }
+            let(:db_adapter) { "#{db_adapter}" }
+            let(:db_scenario) { db_name.to_sym }
             let(:db_config_yml) { sprintf(File.read(db_config_path), storage: storage_path, db_path: db_path) }
             let(:db_config) { YAML.load(db_config_yml) }
 
@@ -192,12 +206,14 @@ module ActiveRecord
       end
 
       def with_schema_dump_file
-        FileUtils.cp "test/scenarios/schema.rb",
+        schema_file = Dir.glob("test/scenarios/*/schema.rb").first
+        FileUtils.cp schema_file,
                      ActiveRecord::Tasks::DatabaseTasks.schema_dump_path(base_config)
       end
 
       def with_schema_cache_dump_file
-        FileUtils.cp "test/scenarios/schema_cache.yml",
+        cache_file = Dir.glob("test/scenarios/*/schema_cache.yml").first
+        FileUtils.cp cache_file,
                      ActiveRecord::Tasks::DatabaseTasks.cache_dump_filename(base_config)
       end
 
@@ -206,7 +222,7 @@ module ActiveRecord
       end
 
       def with_migration(file)
-        FileUtils.cp File.join("test", "scenarios", file), File.join(db_path, "tenanted_migrations")
+        FileUtils.cp File.join("test", "scenarios", db_adapter, file), File.join(db_path, "tenanted_migrations")
       end
 
       def assert_same_elements(expected, actual)
