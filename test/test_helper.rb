@@ -71,12 +71,15 @@ module ActiveRecord
         end
 
         def all_scenarios
+          filter_adapter = ENV["TEST_ADAPTER"]
           Dir.glob(File.join(__dir__, "scenarios", "*", "*", "database.yml"))
             .each_with_object({}) do |db_config_path, scenarios|
             db_config_dir = File.dirname(db_config_path)
             db_adapter = File.basename(File.dirname(db_config_dir))
             db_scenario = File.basename(db_config_dir)
             model_files = Dir.glob(File.join(db_config_dir, "*.rb"))
+
+            next if filter_adapter && db_adapter != filter_adapter
 
             scenarios["#{db_adapter}/#{db_scenario}"] = model_files.map { File.basename(_1, ".*") }
           end
@@ -105,7 +108,7 @@ module ActiveRecord
             let(:db_adapter) { "#{db_adapter}" }
             let(:db_scenario) { db_name.to_sym }
             let(:db_config_yml) { sprintf(File.read(db_config_path), storage: storage_path, db_path: db_path) }
-            let(:db_config) { YAML.load(db_config_yml) }
+            let(:db_config) { YAML.load(db_config_yml, aliases: true) }
 
             setup do
               FileUtils.mkdir(db_path)
