@@ -322,7 +322,6 @@ GEM
     tailwindcss-ruby (4.1.13-x86_64-linux-musl)
     thor (1.4.0)
     timeout (0.4.3)
-    trilogy (2.9.0)
     tsort (0.2.0)
     turbo-rails (2.0.17)
       actionpack (>= 7.1.0)
@@ -374,7 +373,6 @@ DEPENDENCIES
   sqlite3 (= 2.7.4)
   stimulus-rails
   tailwindcss-rails
-  trilogy (~> 2.9)
   turbo-rails
 
 BUNDLED WITH

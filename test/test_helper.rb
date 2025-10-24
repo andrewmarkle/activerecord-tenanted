@@ -19,6 +19,7 @@ end
 require_relative "../lib/active_record/tenanted"
 
 require_relative "dummy/config/environment"
+require "erb"
 require "minitest/spec"
 require "minitest/mock"
 
@@ -92,7 +93,14 @@ module ActiveRecord
             db_name = db_adapter
             matching_scenarios = all_scenarios.keys.select { |key| key.to_s.end_with?("/#{db_name}") }
             raise "Could not find scenario: #{db_name}" if matching_scenarios.empty?
-            raise "Multiple adapters found for scenario #{db_name}: #{matching_scenarios.join(', ')}" if matching_scenarios.size > 1
+
+            if matching_scenarios.size > 1
+              matching_scenarios.each do |scenario|
+                with_db_scenario(scenario, &block)
+              end
+              return
+            end
+
             db_adapter, db_name = matching_scenarios.first.to_s.split("/", 2)
           end
 
@@ -107,7 +115,10 @@ module ActiveRecord
             let(:db_path) { File.join(ephemeral_path, "db") }
             let(:db_adapter) { "#{db_adapter}" }
             let(:db_scenario) { db_name.to_sym }
-            let(:db_config_yml) { sprintf(File.read(db_config_path), storage: storage_path, db_path: db_path) }
+            let(:db_config_yml) do
+              erb_content = ERB.new(File.read(db_config_path)).result(binding)
+              sprintf(erb_content, storage: storage_path, db_path: db_path)
+            end
             let(:db_config) { YAML.load(db_config_yml, aliases: true) }
 
             setup do

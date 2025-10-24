@@ -51,7 +51,9 @@ module ActiveRecord
             hash[:tenant] = tenant_name
             hash[:database] = database_for(tenant_name)
             hash[:tenanted_config_name] = name
-            hash[:host] = host_for(tenant_name) if hash.key?(:host)
+            # Only override host if it contains a tenant template
+            new_host = host_for(tenant_name)
+            hash[:host] = new_host if new_host
           end
           Tenanted::DatabaseConfigurations::TenantConfig.new(env_name, config_name, config_hash)
         end

@@ -4,7 +4,7 @@ default: &default
   max_connections: 5
   username: root
   password: devcontainer
-  host: mysql
+  host: <%= ENV.fetch('MYSQL_HOST', 'mysql') %>
   port: 3306
   sslmode: disabled
 
