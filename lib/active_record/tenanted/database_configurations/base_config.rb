@@ -37,12 +37,18 @@ module ActiveRecord
         end
 
         def host_for(tenant_name)
-          return nil unless host.include?("%{tenant}")
+          return nil unless host&.include?("%{tenant}")
           sprintf(host, tenant: tenant_name)
         end
 
         def tenants
-          config_adapter.tenant_databases
+          all_databases = ActiveRecord::Base.configurations.configs_for(env_name: env_name)
+          non_tenant_db_names = all_databases.reject { |c| c.configuration_hash[:tenanted] }.map(&:database).compact
+
+          config_adapter.tenant_databases.reject do |tenant_name|
+            tenant_db_name = database_for(tenant_name)
+            non_tenant_db_names.include?(tenant_db_name)
+          end
         end
 
         def new_tenant_config(tenant_name)

@@ -11,11 +11,9 @@ module ActiveRecord
         end
 
         def tenant_databases
-          # Extract the database pattern from the root config
-          # e.g., "myapp_%{tenant}" becomes "myapp_%"
-          database_pattern = db_config.database.gsub(/%\{tenant\}/, "%")
+          like_pattern = db_config.database.gsub(/%\{tenant\}/, "%")
+          scanner = Regexp.new("^" + Regexp.escape(db_config.database).gsub(Regexp.escape("%{tenant}"), "(.+)") + "$")
 
-          # Create a temporary config without the specific database to connect to MySQL server
           server_config = db_config.configuration_hash.dup
           server_config.delete(:database)
           temp_config = ActiveRecord::DatabaseConfigurations::HashConfig.new(
@@ -25,21 +23,18 @@ module ActiveRecord
           )
 
           ActiveRecord::Tasks::DatabaseTasks.with_temporary_connection(temp_config) do |conn|
-            result = conn.execute("SHOW DATABASES LIKE '#{database_pattern}'")
-
-            # Extract tenant names from database names
-            # e.g., "myapp_tenant1" -> "tenant1"
-            prefix_pattern = db_config.database.split("%{tenant}").first
-            suffix_pattern = db_config.database.split("%{tenant}").last
+            result = conn.execute("SHOW DATABASES LIKE '#{like_pattern}'")
 
             result.filter_map do |row|
               db_name = row[0] || row.first
-              # Remove prefix and suffix to get tenant name
-              tenant_name = db_name.dup
-              tenant_name = tenant_name.sub(/^#{Regexp.escape(prefix_pattern)}/, "") if prefix_pattern.present?
-              tenant_name = tenant_name.sub(/#{Regexp.escape(suffix_pattern)}$/, "") if suffix_pattern.present?
-              tenant_name
-            end.reject(&:empty?)
+              match = db_name.match(scanner)
+              if match.nil?
+                Rails.logger.warn "ActiveRecord::Tenanted: Cannot parse tenant name from database #{db_name.inspect}"
+                nil
+              else
+                match[1]
+              end
+            end
           end
         rescue ActiveRecord::NoDatabaseError, Mysql2::Error => e
           Rails.logger.warn "Could not list tenant databases: #{e.message}"
@@ -47,16 +42,22 @@ module ActiveRecord
         end
 
         def validate_tenant_name(tenant_name)
-          if tenant_name.length > 64
-            raise ActiveRecord::Tenanted::BadTenantNameError, "Tenant name too long (max 64 characters): #{tenant_name.inspect}"
+          tenant_name_str = tenant_name.to_s
+
+          database_name = sprintf(db_config.database, tenant: tenant_name_str)
+
+          return if database_name.include?("%{") || database_name.include?("%}")
+
+          if database_name.length > 64
+            raise ActiveRecord::Tenanted::BadTenantNameError, "Database name too long (max 64 characters): #{database_name.inspect}"
           end
 
-          if tenant_name.match?(/[^a-zA-Z0-9_$-]/)
-            raise ActiveRecord::Tenanted::BadTenantNameError, "Tenant name contains invalid characters (only letters, numbers, underscore, and $ allowed): #{tenant_name.inspect}"
+          if database_name.match?(/[^a-zA-Z0-9_$-]/)
+            raise ActiveRecord::Tenanted::BadTenantNameError, "Database name contains invalid characters (only letters, numbers, underscore, $ and hyphen allowed): #{database_name.inspect}"
           end
 
-          if tenant_name.match?(/^\d/)
-            raise ActiveRecord::Tenanted::BadTenantNameError, "Tenant name cannot start with a number: #{tenant_name.inspect}"
+          if database_name.match?(/^\d/)
+            raise ActiveRecord::Tenanted::BadTenantNameError, "Database name cannot start with a number: #{database_name.inspect}"
           end
 
           reserved_words = %w[
@@ -66,8 +67,8 @@ module ActiveRecord
             and or not null true false
           ]
 
-          if reserved_words.include?(tenant_name.downcase)
-            raise ActiveRecord::Tenanted::BadTenantNameError, "Tenant name is a reserved MySQL keyword: #{tenant_name.inspect}"
+          if reserved_words.include?(database_name.downcase)
+            raise ActiveRecord::Tenanted::BadTenantNameError, "Database name is a reserved MySQL keyword: #{database_name.inspect}"
           end
         end
 
@@ -80,7 +81,6 @@ module ActiveRecord
             "#{db_config.name}_server",
             server_config
           )
-
           ActiveRecord::Tasks::DatabaseTasks.with_temporary_connection(temp_config) do |conn|
             # Use ActiveRecord's built-in create_database method with charset/collation from config
             create_options = {}

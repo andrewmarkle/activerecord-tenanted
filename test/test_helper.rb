@@ -58,11 +58,14 @@ module ActiveRecord
           end
         end
 
-        def for_each_scenario(s = all_scenarios, except: {}, &block)
+        def for_each_scenario(s = all_scenarios, except: {}, only: {}, &block)
           s.each do |db_scenario, model_scenarios|
             with_db_scenario(db_scenario) do
               model_scenarios.each do |model_scenario|
                 scenario_name = db_scenario.to_s.split("/").last
+                adapter = db_scenario.to_s.include?("/") ? db_scenario.to_s.split("/").first.to_sym : nil
+
+                next if only.present? && only.dig(:adapter) != adapter
                 next if except[db_scenario.to_sym]&.include?(model_scenario.to_sym)
                 next if except[scenario_name.to_sym]&.include?(model_scenario.to_sym)
                 with_model_scenario(model_scenario, &block)
@@ -142,6 +145,8 @@ module ActiveRecord
             end
 
             teardown do
+              cleanup_shared_databases
+              cleanup_tenant_databases
               ActiveRecord::Migration.verbose = @migration_verbose_was
               ActiveRecord::Base.configurations = @old_configurations
               ActiveRecord::Tasks::DatabaseTasks.db_dir = @old_db_dir
@@ -262,6 +267,46 @@ module ActiveRecord
       end
 
       private
+        def cleanup_tenant_databases
+          base_config = all_configs.find { |c| c.configuration_hash[:tenanted] }
+          return unless base_config
+
+          tenants = base_config.tenants
+          tenants.each do |tenant_name|
+            adapter = base_config.new_tenant_config(tenant_name).config_adapter
+            adapter.drop_database
+          rescue => e
+            Rails.logger.warn "Failed to cleanup tenant database #{tenant_name}: #{e.message}"
+          end
+        end
+
+        def cleanup_shared_databases
+          shared_configs = all_configs.reject { |c| c.configuration_hash[:tenanted] || c.database.blank? }
+          shared_configs.each do |config|
+            if db_adapter == "mysql"
+              ActiveRecord::Tasks::DatabaseTasks.drop(config)
+              ActiveRecord::Tasks::DatabaseTasks.create(config)
+              ActiveRecord::Tasks::DatabaseTasks.migrate(config)
+            else
+              pool = ActiveRecord::Base.connection_handler.retrieve_connection_pool(
+                config.name,
+                role: ActiveRecord.writing_role,
+                shard: ActiveRecord::Base.default_shard,
+                strict: false
+              )
+              next unless pool
+
+              conn = pool.connection
+              tables = conn.tables - [ "ar_internal_metadata", "schema_migrations" ]
+              tables.each do |table|
+                conn.execute("DELETE FROM #{conn.quote_table_name(table)}")
+              end
+            end
+          rescue => e
+            Rails.logger.warn "Failed to cleanup shared database #{config.name}: #{e.message}"
+          end
+        end
+
         def create_fake_record
           # emulate models like ActiveStorage::Record that inherit directly from AR::Base
           Object.const_set(:FakeRecord, Class.new(ActiveRecord::Base))
