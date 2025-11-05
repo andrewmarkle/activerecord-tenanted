@@ -5,6 +5,10 @@ SMARTY_PATH  = File.join(GEM_PATH, "test/smarty")
 GEMFILE      = File.join(GEM_PATH, "Gemfile")
 OVERLAY_PATH = File.join(GEM_PATH, "test/integration")
 
+# Ensure MySQL environment variables are set (for devcontainer)
+ENV["MYSQL_HOST"] ||= "mysql"
+ENV["MYSQL_PORT"] ||= "3306"
+
 TEST_ARGS = ARGV.dup
 OPT_KEEP_DIR = TEST_ARGS.delete("--keep") # keep the test tempdirs around for examination
 
@@ -16,13 +20,15 @@ PARALLEL = ENV["NCPU"].to_i > 1
 require "fileutils"
 require "tmpdir"
 require "yaml"
+require "erb"
 require "open3"
 require "active_support"
+require "debug"
 require "active_support/core_ext/object" # deep_dup
 
-scenarios = Dir.glob("test/scenarios/*db/*record.rb").map do |path|
-  database, models = path.scan(%r{test/scenarios/(.+db)/(.+record).rb}).flatten
-  { database: database, models: models }
+scenarios = Dir.glob("test/scenarios/*/*db/*record.rb").map do |path|
+  adapter, database, models = path.scan(%r{test/scenarios/([^/]+)/(.+db)/(.+record).rb}).flatten
+  { adapter: adapter, database: database, models: models }
 end
 
 COLOR_FG_BLUE = "\e[0;34m"
@@ -32,9 +38,18 @@ def run_cmd(scenario, cmd, verbose: false, env: {})
   message = "#{COLOR_FG_BLUE}#{scenario}#{COLOR_RESET} > #{env.presence} #{cmd}"
   print message + (PARALLEL ? "\n" : "")
 
+  # Merge provided env with current ENV to preserve MYSQL_HOST and other vars
+  merged_env = ENV.to_h.merge(env)
+
+  # Debug: show MySQL environment variables being passed
+  if ENV["DEBUG"] && (cmd.include?("db:") || cmd.include?("rails"))
+    puts "  [DEBUG] MYSQL_HOST=#{merged_env['MYSQL_HOST']}, MYSQL_PORT=#{merged_env['MYSQL_PORT']}"
+  end
+
   output = status = nil
   elapsed = ActiveSupport::Benchmark.realtime do
-    output, status = Open3.capture2e(env, cmd)
+    # Use sh -c to ensure environment variables are properly inherited
+    output, status = Open3.capture2e(merged_env, "sh", "-c", cmd)
   end
 
   puts " (#{elapsed.round(2)}s)" if !PARALLEL
@@ -53,24 +68,33 @@ def run_scenario(scenario)
   FileUtils.copy_entry(SMARTY_PATH, app_path)
 
   # generate database file
-  database_file = File.join(GEM_PATH, "test/scenarios/#{scenario[:database]}/database.yml")
-  database_file_contents = sprintf(File.read(database_file), storage: "storage", db_path: "db")
-  database_file_hash = YAML.load(database_file_contents)
+  database_file = File.join(GEM_PATH, "test/scenarios/#{scenario[:adapter]}/#{scenario[:database]}/database.yml")
+  # database_file_contents = sprintf(File.read(database_file), storage: "storage", db_path: "db")
+  database_file_contents = ERB.new(File.read(database_file)).result
+  database_file_hash = YAML.unsafe_load(database_file_contents)
   database_file_hash["development"] = database_file_hash["test"].deep_dup
   database_file_hash["development"].each_value do |hash|
     hash["database"] = hash["database"].sub("/test/", "/development/")
   end
-  File.write(File.join(app_path, "config/database.yml"), database_file_hash.to_yaml)
+  final_yaml = database_file_hash.to_yaml
+  File.write(File.join(app_path, "config/database.yml"), final_yaml)
+
+  # Debug: print the generated database.yml to see if host is set correctly
+  if ENV["DEBUG"]
+    puts "\n=== Generated database.yml for #{scenario} ==="
+    puts final_yaml
+    puts "=== End database.yml ===\n"
+  end
 
   # generate models using ApplicationRecord
-  models_file = File.join(GEM_PATH, "test/scenarios/#{scenario[:database]}/#{scenario[:models]}.rb")
+  models_file = File.join(GEM_PATH, "test/scenarios/#{scenario[:adapter]}/#{scenario[:database]}/#{scenario[:models]}.rb")
   models_file_contents = File.read(models_file)
                            .gsub("TenantedApplicationRecord", "ApplicationRecord")
   File.write(File.join(app_path, "app/models/application_record.rb"), models_file_contents)
 
   # copy migrations from scenario and smarty app
   FileUtils.mkdir_p(File.join(app_path, "db"))
-  FileUtils.cp_r(Dir.glob(File.join(GEM_PATH, "test/scenarios/#{scenario[:database]}/*migrations")),
+  FileUtils.cp_r(Dir.glob(File.join(GEM_PATH, "test/scenarios/#{scenario[:adapter]}/#{scenario[:database]}/*migrations")),
                  File.join(app_path, "db"))
   FileUtils.cp_r(Dir.glob(File.join(app_path, "db/migrate/*rb")),
                  File.join(app_path, "db/tenanted_migrations"))
@@ -78,12 +102,23 @@ def run_scenario(scenario)
   # copy overlay tests and tenanting config
   FileUtils.cp_r(Dir.glob(File.join(OVERLAY_PATH, "*")), app_path)
 
+  # Capture MySQL environment variables before Bundler.with_original_env strips them
+  # Ensure we always have values, don't rely on ENV being set
+  mysql_env = {
+    "MYSQL_HOST" => ENV.fetch("MYSQL_HOST", "mysql"),
+    "MYSQL_PORT" => ENV.fetch("MYSQL_PORT", "3306")
+  }
+
+  if ENV["DEBUG"]
+    puts "\n[DEBUG] mysql_env hash: #{mysql_env.inspect}"
+  end
+
   Dir.chdir(app_path) do
     Bundler.with_original_env do
-      run_cmd(scenario, "bundle check || bundle install")
+      run_cmd(scenario, "bundle check || bundle install", env: mysql_env)
 
       # set up the database and schema files
-      run_cmd(scenario, "bin/rails db:prepare")
+      run_cmd(scenario, "bin/rails db:prepare", env: mysql_env)
 
       # validate-ish the setup
       prefix = scenario[:database].match?(/\Asecondary/) ? "tenanted_" : ""
@@ -97,13 +132,13 @@ def run_scenario(scenario)
       FileUtils.touch(test_db)
 
       # run in parallel half the time
-      env = if rand(2).zero?
+      test_env = if rand(2).zero?
         { "PARALLEL_WORKERS" => "2" }
       else
         { "PARALLEL_WORKERS" => "1" }
       end
 
-      run_cmd(scenario, ["bin/rails test", *TEST_ARGS].join(" "), verbose: true, env:)
+      run_cmd(scenario, ["bin/rails test", *TEST_ARGS].join(" "), verbose: true, env: mysql_env.merge(test_env))
     ensure
       ENV["BUNDLE_GEMFILE"] = nil
     end
