@@ -36,6 +36,11 @@ module ActiveRecord
           db
         end
 
+        def host_for(tenant_name)
+          return nil unless host.include?("%{tenant}")
+          sprintf(host, tenant: tenant_name)
+        end
+
         def tenants
           config_adapter.tenant_databases
         end
@@ -46,6 +51,7 @@ module ActiveRecord
             hash[:tenant] = tenant_name
             hash[:database] = database_for(tenant_name)
             hash[:tenanted_config_name] = name
+            hash[:host] = host_for(tenant_name) if hash.key?(:host)
           end
           Tenanted::DatabaseConfigurations::TenantConfig.new(env_name, config_name, config_hash)
         end
